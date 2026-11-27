@@ -19,6 +19,7 @@ start() {
   echo "$name started (pid $(cat "$pidfile")) — log: logs/$name.log"
 }
 
+# Backend stays on localhost — the Vite dev server proxies /api to it internally.
 start backend "$ROOT/backend" "$ROOT/backend/.venv/bin/uvicorn" app.main:app --host 127.0.0.1 --port 8010 --app-dir "$ROOT/backend"
 start frontend "$ROOT/superadmin" npm run dev
 
