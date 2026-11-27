@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Start the superadmin backend gateway (:8010) and frontend dev server (:5173)
+# Start the superadmin backend gateway (:8010) and frontend dev server (:5273)
 # detached via nohup — they keep running after this script and the terminal exit.
 set -euo pipefail
 
