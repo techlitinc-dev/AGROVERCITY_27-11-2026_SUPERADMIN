@@ -24,4 +24,4 @@ start frontend "$ROOT/superadmin" npm run dev
 
 echo
 echo "Backend:   http://localhost:8010   (API + serves the production build)"
-echo "Frontend:  http://localhost:5173   (dev server, hot reload — use this while developing)"
+echo "Frontend:  http://localhost:5273   (superadmin dev server, hot reload — use this while developing)"

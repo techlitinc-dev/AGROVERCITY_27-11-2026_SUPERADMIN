@@ -31,10 +31,11 @@ python3 -m venv .venv
 .venv/bin/pip install -r requirements.txt
 .venv/bin/uvicorn app.main:app --port 8010
 
-# 2. Frontend dev server (proxies /api → http://localhost:8010)
+# 2. Frontend dev server (superadmin app on :5273, proxies /api → http://localhost:8010)
+#    (5173 is reserved for the main Agrovercity web app)
 cd superadmin
 npm install
-npm run dev        # http://localhost:5173
+npm run dev        # http://localhost:5273
 
 # Tests (mocked upstream, no network needed)
 cd backend && .venv/bin/python -m pytest tests
