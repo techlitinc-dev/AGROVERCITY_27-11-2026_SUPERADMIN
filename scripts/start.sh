@@ -15,14 +15,22 @@ start() {
     echo "$name already running (pid $(cat "$pidfile"))"
     return 0
   fi
-  ( cd "$dir" && nohup "$@" > "$LOGS/$name.log" 2>&1 & echo $! > "$pidfile" )
+  rm -f "$pidfile"
+  # The subshell execs nohup, so $! is the final server process — a reliable pid.
+  ( cd "$dir" && exec nohup "$@" > "$LOGS/$name.log" 2>&1 ) &
+  echo $! > "$pidfile"
+  disown 2>/dev/null || true
   echo "$name started (pid $(cat "$pidfile")) — log: logs/$name.log"
 }
 
-# Backend stays on localhost — the Vite dev server proxies /api to it internally.
+# Backend stays on localhost — internal API only. The web app is served
+# publicly by a single gateway instance on :5272 (production build + API,
+# same origin), running continuously via nohup.
 start backend "$ROOT/backend" "$ROOT/backend/.venv/bin/uvicorn" app.main:app --host 127.0.0.1 --port 8010 --app-dir "$ROOT/backend"
-start frontend "$ROOT/superadmin" npm run dev
+start public5272 "$ROOT/backend" "$ROOT/backend/.venv/bin/uvicorn" app.main:app --host 0.0.0.0 --port 5272 --app-dir "$ROOT/backend"
+# Continuous frontend builder: rebuilds dist/ whenever web app sources change.
+start builder "$ROOT/superadmin" npm run build:watch
 
 echo
-echo "Backend:   http://localhost:8010   (API + serves the production build)"
-echo "Frontend:  http://localhost:5273   (superadmin dev server, hot reload — use this while developing)"
+echo "Web app:    http://<host>:5272/    (production build + API — the only public port)"
+echo "Backend:    http://localhost:8010  (internal API, localhost only)"

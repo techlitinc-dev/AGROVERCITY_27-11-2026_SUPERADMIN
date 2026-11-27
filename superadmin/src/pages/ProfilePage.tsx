@@ -9,19 +9,14 @@ function fmtDate(value?: string): string {
   return Number.isNaN(d.getTime()) ? value : d.toLocaleString();
 }
 
-function isWeakMpin(mpin: string): boolean {
-  if (/^(\d)\1{3}$/.test(mpin)) return true; // repeated: 1111
-  const ascending = '0123456789';
-  const descending = '9876543210';
-  return ascending.includes(mpin) || descending.includes(mpin); // sequential: 1234, 3210
-}
+const EMAIL_RE = /^[^@\s]+@[^@\s]+\.[^@\s]+$/;
 
-/* ---------- Change MPIN ---------- */
+/* ---------- Change password ---------- */
 
-function ChangeMpinForm() {
-  const [oldMpin, setOldMpin] = useState('');
-  const [newMpin, setNewMpin] = useState('');
-  const [confirmMpin, setConfirmMpin] = useState('');
+function ChangePasswordForm() {
+  const [currentPassword, setCurrentPassword] = useState('');
+  const [newPassword, setNewPassword] = useState('');
+  const [confirmPassword, setConfirmPassword] = useState('');
   const [reason, setReason] = useState('');
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -32,33 +27,29 @@ function ChangeMpinForm() {
     setError(null);
     setSuccess(false);
 
-    if (!/^\d{4}$/.test(oldMpin) || !/^\d{4}$/.test(newMpin)) {
-      setError('MPIN must be exactly 4 digits.');
+    if (newPassword.length < 8) {
+      setError('New password must be at least 8 characters.');
       return;
     }
-    if (newMpin === oldMpin) {
-      setError('New MPIN must be different from the current MPIN.');
+    if (newPassword === currentPassword) {
+      setError('New password must be different from the current password.');
       return;
     }
-    if (isWeakMpin(newMpin)) {
-      setError('New MPIN is too predictable — avoid repeated or sequential digits.');
-      return;
-    }
-    if (newMpin !== confirmMpin) {
-      setError('New MPIN and confirmation do not match.');
+    if (newPassword !== confirmPassword) {
+      setError('New password and confirmation do not match.');
       return;
     }
 
     setSubmitting(true);
     try {
-      await api.changeMpin(oldMpin, newMpin, reason.trim() || undefined);
+      await api.changePassword(currentPassword, newPassword, reason.trim() || undefined);
       setSuccess(true);
-      setOldMpin('');
-      setNewMpin('');
-      setConfirmMpin('');
+      setCurrentPassword('');
+      setNewPassword('');
+      setConfirmPassword('');
       setReason('');
     } catch (err) {
-      setError(err instanceof ApiClientError ? err.message : 'Could not change MPIN. Please try again.');
+      setError(err instanceof ApiClientError ? err.message : 'Could not change password. Please try again.');
     } finally {
       setSubmitting(false);
     }
@@ -66,12 +57,12 @@ function ChangeMpinForm() {
 
   return (
     <section className="card p-6">
-      <h2 className="mb-1 text-base font-semibold text-slate-900">Change MPIN</h2>
-      <p className="mb-4 text-sm text-slate-500">Your current MPIN is required. The change is written to the audit log.</p>
+      <h2 className="mb-1 text-base font-semibold text-slate-900">Change password</h2>
+      <p className="mb-4 text-sm text-slate-500">Your current password is required. The change is written to the audit log.</p>
 
       {success && (
         <div className="mb-4 rounded-lg border border-agri-300 bg-agri-50 px-4 py-3 text-sm text-agri-800" role="status">
-          MPIN changed successfully.
+          Password changed successfully.
         </div>
       )}
       {error && (
@@ -82,53 +73,50 @@ function ChangeMpinForm() {
 
       <form onSubmit={(e) => void onSubmit(e)} className="grid grid-cols-1 gap-4 sm:grid-cols-3" noValidate>
         <div>
-          <label htmlFor="old-mpin" className="mb-1 block text-sm font-medium text-slate-700">
-            Current MPIN
+          <label htmlFor="current-password" className="mb-1 block text-sm font-medium text-slate-700">
+            Current password
           </label>
           <input
-            id="old-mpin"
+            id="current-password"
             type="password"
-            inputMode="numeric"
-            autoComplete="off"
-            value={oldMpin}
-            onChange={(e) => setOldMpin(e.target.value.replace(/\D/g, '').slice(0, 4))}
+            autoComplete="current-password"
+            value={currentPassword}
+            onChange={(e) => setCurrentPassword(e.target.value)}
             className="input-field"
           />
         </div>
         <div>
-          <label htmlFor="new-mpin" className="mb-1 block text-sm font-medium text-slate-700">
-            New MPIN
+          <label htmlFor="new-password" className="mb-1 block text-sm font-medium text-slate-700">
+            New password
           </label>
           <input
-            id="new-mpin"
+            id="new-password"
             type="password"
-            inputMode="numeric"
             autoComplete="new-password"
-            value={newMpin}
-            onChange={(e) => setNewMpin(e.target.value.replace(/\D/g, '').slice(0, 4))}
+            value={newPassword}
+            onChange={(e) => setNewPassword(e.target.value)}
             className="input-field"
           />
         </div>
         <div>
-          <label htmlFor="confirm-mpin" className="mb-1 block text-sm font-medium text-slate-700">
-            Confirm new MPIN
+          <label htmlFor="confirm-password" className="mb-1 block text-sm font-medium text-slate-700">
+            Confirm new password
           </label>
           <input
-            id="confirm-mpin"
+            id="confirm-password"
             type="password"
-            inputMode="numeric"
             autoComplete="new-password"
-            value={confirmMpin}
-            onChange={(e) => setConfirmMpin(e.target.value.replace(/\D/g, '').slice(0, 4))}
+            value={confirmPassword}
+            onChange={(e) => setConfirmPassword(e.target.value)}
             className="input-field"
           />
         </div>
         <div className="sm:col-span-2">
-          <label htmlFor="mpin-reason" className="mb-1 block text-sm font-medium text-slate-700">
+          <label htmlFor="password-reason" className="mb-1 block text-sm font-medium text-slate-700">
             Reason <span className="font-normal text-slate-400">(optional, recorded in audit log)</span>
           </label>
           <input
-            id="mpin-reason"
+            id="password-reason"
             type="text"
             value={reason}
             onChange={(e) => setReason(e.target.value)}
@@ -138,10 +126,153 @@ function ChangeMpinForm() {
         </div>
         <div className="flex items-end">
           <button type="submit" disabled={submitting} className="btn-primary w-full">
-            {submitting ? 'Updating…' : 'Update MPIN'}
+            {submitting ? 'Updating…' : 'Update password'}
           </button>
         </div>
       </form>
+    </section>
+  );
+}
+
+/* ---------- Recovery email ---------- */
+
+function RecoveryEmailSection() {
+  const [email, setEmail] = useState<string | null>(null);
+  const [loaded, setLoaded] = useState(false);
+  const [loadError, setLoadError] = useState<string | null>(null);
+  const [editing, setEditing] = useState(false);
+  const [formEmail, setFormEmail] = useState('');
+  const [formPassword, setFormPassword] = useState('');
+  const [saving, setSaving] = useState(false);
+  const [formError, setFormError] = useState<string | null>(null);
+
+  useEffect(() => {
+    const load = async () => {
+      try {
+        const res = await api.recoveryEmail();
+        setEmail(res.email);
+      } catch (err) {
+        setLoadError(err instanceof ApiClientError ? err.message : 'Could not load recovery email.');
+      } finally {
+        setLoaded(true);
+      }
+    };
+    void load();
+  }, []);
+
+  const openEdit = () => {
+    setFormEmail(email ?? '');
+    setFormPassword('');
+    setFormError(null);
+    setEditing(true);
+  };
+
+  const onSubmit = async (e: FormEvent) => {
+    e.preventDefault();
+    setFormError(null);
+    const trimmed = formEmail.trim();
+    if (!EMAIL_RE.test(trimmed)) {
+      setFormError('Enter a valid email address.');
+      return;
+    }
+    if (!formPassword) {
+      setFormError('Your current password is required to confirm this change.');
+      return;
+    }
+    setSaving(true);
+    try {
+      const res = await api.setRecoveryEmail(trimmed, formPassword);
+      setEmail(res.email);
+      setEditing(false);
+    } catch (err) {
+      setFormError(err instanceof ApiClientError ? err.message : 'Could not save the recovery email. Please try again.');
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  return (
+    <section className="card p-6">
+      <div className="flex flex-wrap items-center justify-between gap-4">
+        <div>
+          <h2 className="text-base font-semibold text-slate-900">Recovery email</h2>
+          <p className="text-sm text-slate-500">
+            A secondary email used for account recovery if you lose access to this account.
+          </p>
+        </div>
+        <button type="button" onClick={openEdit} className="btn-ghost !py-1.5" disabled={!loaded}>
+          {email ? 'Update' : 'Add recovery email'}
+        </button>
+      </div>
+
+      {loadError && (
+        <div className="mt-4 rounded-lg border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700" role="alert">
+          {loadError}
+        </div>
+      )}
+
+      {!loadError && (
+        <div className="mt-4">
+          {loaded && !email ? (
+            <p className="text-sm text-slate-400">No recovery email set.</p>
+          ) : (
+            <p className="inline-flex items-center gap-2 rounded-lg bg-slate-50 px-3 py-2 text-sm font-medium text-slate-700">
+              <svg viewBox="0 0 20 20" fill="currentColor" className="h-4 w-4 text-agri-600">
+                <path d="M3 4.25A2.25 2.25 0 015.25 2h9.5A2.25 2.25 0 0117 4.25v11.5A2.25 2.25 0 0114.75 18h-9.5A2.25 2.25 0 013 15.75V4.25zm1.5 2.4v9.1c0 .414.336.75.75.75h9.5a.75.75 0 00.75-.75V6.65l-4.9 3.43a1.75 1.75 0 01-2.2 0L4.5 6.65z" />
+              </svg>
+              {email ?? '…'}
+            </p>
+          )}
+        </div>
+      )}
+
+      {editing && (
+        <Modal title={email ? 'Update recovery email' : 'Add recovery email'} onClose={() => !saving && setEditing(false)}>
+          <form onSubmit={(e) => void onSubmit(e)} className="space-y-4" noValidate>
+            <div>
+              <label htmlFor="recovery-email" className="mb-1 block text-sm font-medium text-slate-700">
+                Email address <span className="text-red-600">*</span>
+              </label>
+              <input
+                id="recovery-email"
+                type="email"
+                autoComplete="email"
+                value={formEmail}
+                onChange={(e) => setFormEmail(e.target.value)}
+                placeholder="e.g. ops@example.com"
+                className="input-field"
+              />
+            </div>
+            <div>
+              <label htmlFor="recovery-password" className="mb-1 block text-sm font-medium text-slate-700">
+                Current password <span className="text-red-600">*</span>
+              </label>
+              <input
+                id="recovery-password"
+                type="password"
+                autoComplete="current-password"
+                value={formPassword}
+                onChange={(e) => setFormPassword(e.target.value)}
+                className="input-field"
+              />
+              <p className="mt-1 text-xs text-slate-400">Confirming with your password keeps this change audited.</p>
+            </div>
+            {formError && (
+              <div className="rounded-lg border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700" role="alert">
+                {formError}
+              </div>
+            )}
+            <div className="flex justify-end gap-2">
+              <button type="button" onClick={() => setEditing(false)} className="btn-ghost" disabled={saving}>
+                Cancel
+              </button>
+              <button type="submit" className="btn-primary !px-4 !py-2" disabled={saving}>
+                {saving ? 'Saving…' : 'Save recovery email'}
+              </button>
+            </div>
+          </form>
+        </Modal>
+      )}
     </section>
   );
 }
@@ -316,7 +447,7 @@ export default function ProfilePage() {
     <div className="animate-fade-in space-y-6">
       <div>
         <h1 className="text-xl font-bold text-slate-900">Admin Profile</h1>
-        <p className="text-sm text-slate-500">Your operator account, MPIN, and active sessions.</p>
+        <p className="text-sm text-slate-500">Your operator account, password, recovery email, and active sessions.</p>
       </div>
 
       <section className="card flex flex-wrap items-center gap-4 p-6">
@@ -337,7 +468,8 @@ export default function ProfilePage() {
         </div>
       </section>
 
-      <ChangeMpinForm />
+      <ChangePasswordForm />
+      <RecoveryEmailSection />
       <SessionsSection />
     </div>
   );

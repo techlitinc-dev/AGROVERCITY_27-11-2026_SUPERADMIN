@@ -16,3 +16,10 @@ superadmin/dist/
 
 # Runtime logs & PIDs
 logs/
+
+# Gateway-local admin credentials (written at runtime, holds password hash)
+backend/app/data/admin_credentials.json
+backend/app/data/admin_credentials.json.tmp
+
+# Gateway-local admin audit trail (dashboard exports, appended at runtime)
+backend/app/data/admin_audit.jsonl

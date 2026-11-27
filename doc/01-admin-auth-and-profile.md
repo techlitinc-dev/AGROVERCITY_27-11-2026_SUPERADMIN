@@ -18,7 +18,7 @@ Gatekeeper module. Authenticates the superadmin operator and manages their own a
 
 **Route**: `/login` (public; redirects to `/` when already authenticated)
 
-**Layout**: centered card on `bg-agri-950` → `agri-800` gradient, logo top, `slide-up` entrance.
+**Layout**: farmer-app theme — radial dark gradient with animated particle-network canvas and ambient glow blobs; glassmorphic split card (brand panel left, auth console right), `slide-up` entrance.
 
 **Fields & behaviour**
 - Mobile number (10-digit, validated) + MPIN (4-digit PIN) or password toggle — accept either per operator setting.
@@ -41,14 +41,16 @@ Gatekeeper module. Authenticates the superadmin operator and manages their own a
 
 **Sections**
 1. **Profile card** — name, mobile, role (`Superadmin`), avatar initial, created date. Read-only except display name.
-2. **Change MPIN** — old MPIN → new MPIN (×2). Rules: 4 digits, not sequential/repeated; requires old MPIN to succeed. Audited with reason `mpin_changed`.
-3. **Active sessions list** — table: device/browser, IP, last active, created; action **Revoke** (per-row, `AuditModal` reason required; current session cannot revoke itself).
-4. **Logout** — clears session, returns to `/login`. Audited with reason `logout`.
+2. **Change password** — current password → new password (×2). Rules: min 8 characters, must differ from the current one; requires the current password to succeed and failed attempts count toward the login lockout. Optional reason recorded in the audit log.
+3. **Recovery email** — secondary email for account recovery. Set or updated from a modal after confirming the current password; the saved address is shown on the profile.
+4. **Active sessions list** — table: device/browser, IP, last active, created; action **Revoke** (per-row, `AuditModal` reason required; current session cannot revoke itself).
+5. **Logout** — clears session, returns to `/login`. Audited with reason `logout`.
 
 **Profile**
-- [ ] MPIN change rejects mismatched/weak PINs with inline errors and never reveals the old MPIN.
+- [ ] Password change rejects mismatched/short passwords with inline errors and never reveals the current password.
+- [ ] Recovery email updates only after the current password is confirmed.
 - [ ] Revoked sessions are invalidated server-side and disappear from the list immediately.
-- [ ] All four events (login, logout, MPIN change, session revoke) are visible in the Audit Log.
+- [ ] Login, logout, and session revoke events are visible in the Audit Log.
 
 ## Operator notes
 

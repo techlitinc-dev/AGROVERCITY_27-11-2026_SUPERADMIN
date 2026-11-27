@@ -1,4 +1,5 @@
 import hmac
+import re
 import time
 
 import httpx
@@ -6,9 +7,9 @@ from fastapi import APIRouter, Request
 from fastapi.responses import JSONResponse, Response
 from pydantic import BaseModel, Field
 
+from app import credentials
 from app.config import (
     ADMIN_EMAIL,
-    ADMIN_PASSWORD,
     LOGIN_LOCKOUT_SECONDS,
     LOGIN_MAX_ATTEMPTS,
     UPSTREAM_SERVICE_MPIN,
@@ -17,11 +18,6 @@ from app.config import (
 from app.upstream import forward, get_http, pass_through_headers
 
 router = APIRouter(prefix="/api", tags=["auth"])
-
-
-class ChangeMpinIn(BaseModel):
-    oldMpin: str = Field(min_length=4, max_length=6)
-    newMpin: str = Field(min_length=4, max_length=6)
 
 
 @router.post("/auth/login")
@@ -57,29 +53,86 @@ async def revoke_session(request: Request, jti: str):
     return await forward(request, "DELETE", f"/v1/auth/sessions/{jti}")
 
 
-@router.post("/auth/change-mpin")
-async def change_mpin(request: Request, payload: ChangeMpinIn):
-    """Change the logged-in admin's MPIN: verify the old one, then set the new one.
+# --- Account self-service: login password + recovery email (gateway-local) ---
 
-    Mirrors doc/01-admin-auth-and-profile.md — old MPIN is required to succeed.
+EMAIL_RE = re.compile(r"^[^@\s]+@[^@\s]+\.[^@\s]+$")
+
+
+class ChangePasswordIn(BaseModel):
+    currentPassword: str = Field(min_length=1, max_length=128)
+    newPassword: str = Field(min_length=8, max_length=128)
+
+
+class RecoveryEmailIn(BaseModel):
+    email: str = Field(min_length=3, max_length=320)
+    currentPassword: str = Field(min_length=1, max_length=128)
+
+
+def _check_current_password(current: str) -> JSONResponse | None:
+    """Verify the current login password, sharing the login throttle.
+
+    Returns a ready-to-send error response, or None when the password is valid.
     """
-    client = get_http(request)
-    headers = pass_through_headers(request)
-
-    verify = await client.post("/v1/admin/verify-mpin", json={"mpin": payload.oldMpin}, headers=headers)
-    if verify.status_code != 200:
-        return Response(
-            content=verify.content,
-            status_code=verify.status_code,
-            media_type=verify.headers.get("content-type", "application/json"),
-        )
-
-    set_new = await client.post("/v1/auth/mpin/set", json={"mpin": payload.newMpin}, headers=headers)
-    return Response(
-        content=set_new.content,
-        status_code=set_new.status_code,
-        media_type=set_new.headers.get("content-type", "application/json"),
+    remaining = throttle.locked_remaining(ADMIN_EMAIL)
+    if remaining:
+        return _locked_response(remaining)
+    if credentials.verify_password(current):
+        throttle.reset(ADMIN_EMAIL)
+        return None
+    throttle.record_failure(ADMIN_EMAIL)
+    remaining = throttle.locked_remaining(ADMIN_EMAIL)
+    if remaining:
+        return _locked_response(remaining)
+    return JSONResponse(
+        status_code=401,
+        content={"error": {"code": "INVALID_CREDENTIALS", "message": "Current password is incorrect.", "fieldErrors": {}}},
     )
+
+
+@router.post("/auth/change-password")
+async def change_password(request: Request, payload: ChangePasswordIn):
+    """Change the admin login password. The current password is required to succeed."""
+    denied = _check_current_password(payload.currentPassword)
+    if denied:
+        return denied
+    credentials.set_password(payload.newPassword)
+    return {"ok": True}
+
+
+@router.get("/auth/recovery-email")
+async def recovery_email(request: Request):
+    """Return the recovery email on file. Requires a valid upstream session."""
+    client = get_http(request)
+    me = await client.get("/v1/users/me", headers=pass_through_headers(request))
+    if me.status_code != 200:
+        return Response(
+            content=me.content,
+            status_code=me.status_code,
+            media_type=me.headers.get("content-type", "application/json"),
+        )
+    return {"email": credentials.get_recovery_email()}
+
+
+@router.put("/auth/recovery-email")
+async def set_recovery_email(request: Request, payload: RecoveryEmailIn):
+    """Set or update the recovery email. The current login password is required."""
+    email = payload.email.strip().lower()
+    if not EMAIL_RE.match(email):
+        return JSONResponse(
+            status_code=422,
+            content={
+                "error": {
+                    "code": "VALIDATION_ERROR",
+                    "message": "Enter a valid email address.",
+                    "fieldErrors": {"email": "invalid format"},
+                }
+            },
+        )
+    denied = _check_current_password(payload.currentPassword)
+    if denied:
+        return denied
+    credentials.set_recovery_email(email)
+    return {"ok": True, "email": email}
 
 
 # --- Email + password login (superadmin web app) ---
@@ -149,9 +202,7 @@ async def login_email(request: Request, payload: EmailLoginIn):
     if remaining:
         return _locked_response(remaining)
 
-    credentials_ok = hmac.compare_digest(email, ADMIN_EMAIL) and hmac.compare_digest(
-        payload.password, ADMIN_PASSWORD
-    )
+    credentials_ok = hmac.compare_digest(email, ADMIN_EMAIL) and credentials.verify_password(payload.password)
     if not credentials_ok:
         throttle.record_failure(email)
         remaining = throttle.locked_remaining(email)

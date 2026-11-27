@@ -1,4 +1,16 @@
+import pytest
+
+from app import credentials
+
 AUTH = {"Authorization": "Bearer at-1"}
+
+
+@pytest.fixture()
+def creds_file(tmp_path, monkeypatch):
+    """Point the credential store at a temp file so tests never touch real state."""
+    path = tmp_path / "admin_credentials.json"
+    monkeypatch.setattr(credentials, "ADMIN_CREDENTIALS_FILE", path)
+    return path
 
 
 def test_health(client):
@@ -70,33 +82,108 @@ def test_revoke_session_forwards_audit_reason(client):
     assert headers.get("x-audit-reason") == "lost device"
 
 
-def test_change_mpin_happy_path(client):
-    r = client.post("/api/auth/change-mpin", json={"oldMpin": "1234", "newMpin": "5678"}, headers=AUTH)
+# --- Change password ---
+
+
+def test_change_password_success(client, creds_file):
+    r = client.post(
+        "/api/auth/change-password",
+        json={"currentPassword": "admin", "newPassword": "Str0ng!Pass"},
+        headers=AUTH,
+    )
     assert r.status_code == 200
-    paths = [(m, p) for m, p, _, _ in client.calls]
-    assert paths == [("POST", "/v1/admin/verify-mpin"), ("POST", "/v1/auth/mpin/set")]
-    set_body = client.calls[-1][3]
-    assert set_body == {"mpin": "5678"}
+    assert r.json() == {"ok": True}
+    assert creds_file.exists()
 
-
-def test_change_mpin_wrong_old_blocked(client):
-    """Old MPIN verification failure must stop the flow — set must never be called."""
-    r = client.post("/api/auth/change-mpin", json={"oldMpin": "9999", "newMpin": "5678"}, headers=AUTH)
-    assert r.status_code == 403
-    assert r.json()["error"]["code"] == "INVALID_MPIN"
-    paths = [(m, p) for m, p, _, _ in client.calls]
-    assert ("POST", "/v1/auth/mpin/set") not in paths
-
-
-def test_change_mpin_unauthorized(client):
-    r = client.post("/api/auth/change-mpin", json={"oldMpin": "1234", "newMpin": "5678"})
+    # login now accepts the new password and rejects the old one
+    assert client.post(
+        "/api/auth/login-email", json={"email": "admin@gmail.com", "password": "Str0ng!Pass"}
+    ).status_code == 200
+    r = client.post("/api/auth/login-email", json={"email": "admin@gmail.com", "password": "admin"})
     assert r.status_code == 401
 
 
-def test_change_mpin_rejects_short_mpin(client):
-    r = client.post("/api/auth/change-mpin", json={"oldMpin": "12", "newMpin": "5678"}, headers=AUTH)
+def test_change_password_wrong_current_rejected(client, creds_file):
+    r = client.post(
+        "/api/auth/change-password",
+        json={"currentPassword": "nope", "newPassword": "Str0ng!Pass"},
+        headers=AUTH,
+    )
+    assert r.status_code == 401
+    assert r.json()["error"]["code"] == "INVALID_CREDENTIALS"
+    assert not creds_file.exists()
+
+
+def test_change_password_short_new_rejected(client, creds_file):
+    r = client.post(
+        "/api/auth/change-password",
+        json={"currentPassword": "admin", "newPassword": "short"},
+        headers=AUTH,
+    )
     assert r.status_code == 422
-    assert ("POST", "/v1/admin/verify-mpin") not in [(m, p) for m, p, _, _ in client.calls]
+    assert not creds_file.exists()
+
+
+def test_change_password_locks_after_max_failures(client, creds_file, monkeypatch):
+    import app.routers.auth as auth_router
+
+    monkeypatch.setattr(auth_router, "throttle", auth_router._Throttle(2, 900))
+    bad = {"currentPassword": "nope", "newPassword": "Str0ng!Pass"}
+
+    assert client.post("/api/auth/change-password", json=bad, headers=AUTH).status_code == 401
+    r = client.post("/api/auth/change-password", json=bad, headers=AUTH)
+    assert r.status_code == 429
+    assert r.json()["error"]["code"] == "ACCOUNT_LOCKED"
+
+    good = {"currentPassword": "admin", "newPassword": "Str0ng!Pass"}
+    assert client.post("/api/auth/change-password", json=good, headers=AUTH).status_code == 429
+    assert not creds_file.exists()
+
+
+# --- Recovery email ---
+
+
+def test_recovery_email_requires_upstream_session(client, creds_file):
+    r = client.get("/api/auth/recovery-email")
+    assert r.status_code == 401
+    assert r.json()["error"]["code"] == "UNAUTHORIZED"
+
+
+def test_recovery_email_roundtrip(client, creds_file):
+    r = client.get("/api/auth/recovery-email", headers=AUTH)
+    assert r.status_code == 200
+    assert r.json() == {"email": None}
+
+    r = client.put(
+        "/api/auth/recovery-email",
+        json={"email": "  Ops@Example.COM ", "currentPassword": "admin"},
+        headers=AUTH,
+    )
+    assert r.status_code == 200
+    assert r.json() == {"ok": True, "email": "ops@example.com"}
+
+    r = client.get("/api/auth/recovery-email", headers=AUTH)
+    assert r.json() == {"email": "ops@example.com"}
+
+
+def test_recovery_email_invalid_format(client, creds_file):
+    r = client.put(
+        "/api/auth/recovery-email",
+        json={"email": "not-an-email", "currentPassword": "admin"},
+        headers=AUTH,
+    )
+    assert r.status_code == 422
+    assert not creds_file.exists()
+
+
+def test_recovery_email_wrong_password_rejected(client, creds_file):
+    r = client.put(
+        "/api/auth/recovery-email",
+        json={"email": "ops@example.com", "currentPassword": "nope"},
+        headers=AUTH,
+    )
+    assert r.status_code == 401
+    assert not creds_file.exists()
 
 
 # --- Email + password login ---

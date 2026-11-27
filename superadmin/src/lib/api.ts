@@ -19,6 +19,49 @@ export interface SessionInfo {
   [key: string]: unknown;
 }
 
+/* --- Module 02: Dashboard (Global KPIs) — envelope mirrors backend/app/routers/dashboard.py --- */
+
+export interface DashboardWidget {
+  error: string | null;
+}
+
+export interface PersonaCountItem {
+  key: string;
+  label: string;
+  count: number;
+}
+
+export interface TrendDay {
+  date: string; // YYYY-MM-DD
+  count: number;
+}
+
+export interface DashboardKpis {
+  generatedAt: string;
+  trendWindow: { start: string; end: string; range: string };
+  users: DashboardWidget & {
+    total: number;
+    newToday: number;
+    newYesterday: number;
+    delta: number;
+  };
+  personas: DashboardWidget & { items: PersonaCountItem[] };
+  trend: DashboardWidget & { days: TrendDay[] };
+  kyc: DashboardWidget & { pending: number; oldestWaiting: string | null };
+  approvals: DashboardWidget & {
+    items: { key: string; label: string; count: number }[];
+    total: number;
+    personaFiltered: boolean;
+  };
+  activity: DashboardWidget & {
+    orders: number;
+    bookings: number;
+    trips: number;
+    personaFiltered: boolean;
+  };
+  coins: DashboardWidget & { inCirculation: number };
+}
+
 export interface LoginResponse {
   accessToken: string;
   refreshToken: string;
@@ -116,12 +159,180 @@ export const api = {
       headers: { 'X-Audit-Reason': reason },
     }),
 
-  changeMpin: (oldMpin: string, newMpin: string, reason?: string) =>
-    request<{ ok: boolean }>('POST', '/api/auth/change-mpin', {
-      json: { oldMpin, newMpin },
+  changePassword: (currentPassword: string, newPassword: string, reason?: string) =>
+    request<{ ok: boolean }>('POST', '/api/auth/change-password', {
+      json: { currentPassword, newPassword },
       headers: reason ? { 'X-Audit-Reason': reason } : {},
     }),
+
+  recoveryEmail: () => request<{ email: string | null }>('GET', '/api/auth/recovery-email'),
+
+  setRecoveryEmail: (email: string, currentPassword: string) =>
+    request<{ ok: boolean; email: string }>('PUT', '/api/auth/recovery-email', {
+      json: { email, currentPassword },
+    }),
+
+  dashboardKpis: (params: { dateRange?: string; personas?: string[]; from?: string; to?: string } = {}) => {
+    const qs = new URLSearchParams();
+    if (params.dateRange) qs.set('date_range', params.dateRange);
+    if (params.personas && params.personas.length) qs.set('personas', params.personas.join(','));
+    if (params.from) qs.set('from', params.from);
+    if (params.to) qs.set('to', params.to);
+    const suffix = qs.toString() ? `?${qs.toString()}` : '';
+    return request<DashboardKpis>('GET', `/api/dashboard/kpis${suffix}`);
+  },
+
+  logExport: (widget: string, format: 'csv' | 'json', reason: string) =>
+    request<{ ok: boolean }>('POST', '/api/dashboard/export', {
+      json: { widget, format, reason },
+    }),
+
+  /* --- Module 03: Users & KYC --- */
+
+  usersList: (params: Record<string, string | number | undefined>) => {
+    const qs = new URLSearchParams();
+    Object.entries(params).forEach(([k, v]) => v !== undefined && v !== '' && qs.set(k, String(v)));
+    const suffix = qs.toString() ? `?${qs.toString()}` : '';
+    return request<{ data: AdminUser[]; total: number; page?: number; totalPages?: number }>('GET', `/api/users${suffix}`);
+  },
+
+  usersStats: () => request<UsersStats>('GET', '/api/users/stats'),
+
+  userDetail: (userId: string) =>
+    request<{
+      userId: string;
+      profile: { data?: UserProfile; error: string | null };
+      activity: { data?: UserActivitySummary; error: string | null };
+      kyc: { data?: unknown; error: string | null };
+      reviews: { data?: { data?: unknown[]; total?: number }; error: string | null };
+    }>('GET', `/api/users/${encodeURIComponent(userId)}`),
+
+  userSetStatus: (userId: string, action: 'suspend' | 'reactivate', reason: string) =>
+    request<unknown>('POST', `/api/users/${encodeURIComponent(userId)}/status`, { json: { action, reason } }),
+
+  userResetMpin: (userId: string, reason: string) =>
+    request<{ tempMpin?: string }>('POST', `/api/users/${encodeURIComponent(userId)}/reset-mpin`, { json: { reason } }),
+
+  kycQueue: (params: Record<string, string | number | undefined> = {}) => {
+    const qs = new URLSearchParams();
+    Object.entries(params).forEach(([k, v]) => v !== undefined && v !== '' && qs.set(k, String(v)));
+    const suffix = qs.toString() ? `?${qs.toString()}` : '';
+    return request<{ data: KycDoc[]; total: number }>('GET', `/api/kyc/queue${suffix}`);
+  },
+
+  kycVerify: (docId: string, comment?: string) =>
+    request<unknown>('POST', `/api/kyc/${encodeURIComponent(docId)}/verify`, { json: { comment } }),
+
+  kycReject: (docId: string, remark: string) =>
+    request<unknown>('POST', `/api/kyc/${encodeURIComponent(docId)}/reject`, { json: { remark } }),
+
+  /* --- Module 04.01: Agri Market Seller --- */
+
+  amsOverview: () => request<AmsOverview>('GET', '/api/personas/agri-market-seller/overview'),
+
+  marketProducts: (params: Record<string, string | number | undefined> = {}) => {
+    const qs = new URLSearchParams();
+    Object.entries(params).forEach(([k, v]) => v !== undefined && v !== '' && qs.set(k, String(v)));
+    const suffix = qs.toString() ? `?${qs.toString()}` : '';
+    return request<{ data: Record<string, unknown>[]; total: number }>('GET', `/api/marketplace/products${suffix}`);
+  },
+
+  marketOrders: (params: Record<string, string | number | undefined> = {}) => {
+    const qs = new URLSearchParams();
+    Object.entries(params).forEach(([k, v]) => v !== undefined && v !== '' && qs.set(k, String(v)));
+    const suffix = qs.toString() ? `?${qs.toString()}` : '';
+    return request<{ data: Record<string, unknown>[]; total: number }>('GET', `/api/marketplace/orders${suffix}`);
+  },
+
+  amsShops: (search?: string) =>
+    request<{ data: AdminUser[]; total: number }>(
+      'GET',
+      `/api/personas/agri-market-seller/shops${search ? `?search=${encodeURIComponent(search)}` : ''}`,
+    ),
 };
+
+/* --- Module 03/04 entity shapes (upstream camelCase/snake_case mixed — normalized at render) --- */
+
+export interface AdminUser {
+  id: string;
+  name?: string;
+  full_name?: string;
+  phone?: string;
+  primaryProfile?: string;
+  activeProfile?: string;
+  linkedProfiles?: string[];
+  kycStatus?: string;
+  createdAt?: string;
+  is_blocked?: boolean;
+  status?: string;
+  agriCoins?: number;
+  [key: string]: unknown;
+}
+
+export interface UsersStats {
+  total_users?: number;
+  new_users_in_range?: number;
+  blocked_accounts?: number;
+  kyc_backlog?: number;
+  kycVerifiedPct?: number | null;
+  [key: string]: unknown;
+}
+
+export interface UserProfile {
+  id: string;
+  full_name?: string;
+  phone?: string;
+  email?: string | null;
+  status?: string;
+  is_blocked?: boolean;
+  kyc_status?: string;
+  created_at?: string;
+  trust_score?: number;
+  personas?: { role: string; is_active?: boolean }[];
+  [key: string]: unknown;
+}
+
+export interface UserActivitySummary {
+  userId?: string;
+  lotsCount?: number;
+  ordersCount?: number;
+  tripsCount?: number;
+  reviewsCount?: number;
+  productsCount?: number;
+  uploadsCount?: number;
+  [key: string]: unknown;
+}
+
+export interface KycDoc {
+  docId?: string;
+  id?: string;
+  docType?: string;
+  status?: string;
+  submittedAt?: string;
+  createdAt?: string;
+  reviewer?: string;
+  remark?: string;
+  user?: { name?: string; phone?: string };
+  images?: string[];
+  [key: string]: unknown;
+}
+
+export interface AmsOverview {
+  analytics: { data?: Record<string, unknown>; error: string | null };
+  products: { total: number; recent: Record<string, unknown>[]; error: string | null };
+  orders: { total: number; recent: Record<string, unknown>[]; error: string | null };
+  kpis: {
+    sellers?: number;
+    gmv?: number;
+    totalOrders?: number;
+    aov?: number;
+    returnRate?: number;
+    monthlyGmv?: { month: string; amount: number }[];
+    ordersByStatus?: Record<string, number>;
+    topProducts?: { name?: string; quantity?: number; revenue?: number }[];
+    topSellers?: { name?: string; revenue?: number }[];
+  };
+}
 
 /** Upstream session list shape varies; normalize to the fields the table needs.
  *  Real API returns {id, userId, device, createdAt, lastUsedAt}; older mocks used
