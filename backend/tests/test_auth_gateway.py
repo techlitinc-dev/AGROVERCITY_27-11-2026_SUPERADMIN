@@ -97,3 +97,53 @@ def test_change_mpin_rejects_short_mpin(client):
     r = client.post("/api/auth/change-mpin", json={"oldMpin": "12", "newMpin": "5678"}, headers=AUTH)
     assert r.status_code == 422
     assert ("POST", "/v1/admin/verify-mpin") not in [(m, p) for m, p, _, _ in client.calls]
+
+
+# --- Email + password login ---
+
+
+def test_email_login_success_exchanges_service_account(client):
+    r = client.post("/api/auth/login-email", json={"email": "admin@gmail.com", "password": "admin"})
+    assert r.status_code == 200
+    data = r.json()
+    assert data["accessToken"] == "at-1"
+    assert data["user"]["isAdmin"] is True
+    # the gateway exchanged the seeded service account upstream
+    method, path, _, body = client.calls[0]
+    assert (method, path) == ("POST", "/v1/auth/login")
+    assert body == {"phone": "+919000000001", "mpin": "1234"}
+
+
+def test_email_login_is_case_insensitive_and_trims(client):
+    r = client.post("/api/auth/login-email", json={"email": "  Admin@Gmail.COM ", "password": "admin"})
+    assert r.status_code == 200
+
+
+def test_email_login_wrong_password_generic_401(client):
+    r = client.post("/api/auth/login-email", json={"email": "admin@gmail.com", "password": "nope"})
+    assert r.status_code == 401
+    assert r.json()["error"]["code"] == "INVALID_CREDENTIALS"
+    # generic message: never reveals which part was wrong
+    assert r.json()["error"]["message"] == "Invalid email or password."
+    # upstream must not be called with bad credentials
+    assert ("POST", "/v1/auth/login") not in [(m, p) for m, p, _, _ in client.calls]
+
+
+def test_email_login_lockout_after_max_attempts(client, monkeypatch):
+    import app.routers.auth as auth_router
+
+    monkeypatch.setattr(auth_router, "throttle", auth_router._Throttle(2, 900))
+    bad = {"email": "admin@gmail.com", "password": "wrong"}
+
+    assert client.post("/api/auth/login-email", json=bad).status_code == 401  # fail 1
+    r = client.post("/api/auth/login-email", json=bad)  # fail 2 -> locks immediately
+    assert r.status_code == 429
+    assert r.json()["error"]["code"] == "ACCOUNT_LOCKED"
+    assert 0 < r.json()["error"]["retryAfterSeconds"] <= 900
+
+    r = client.post("/api/auth/login-email", json=bad)
+    assert r.status_code == 429
+
+    # locked even with the correct password
+    good = {"email": "admin@gmail.com", "password": "admin"}
+    assert client.post("/api/auth/login-email", json=good).status_code == 429

@@ -45,8 +45,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     void bootstrap();
   }, []);
 
-  const login = async (phone: string, mpin: string) => {
-    const res = await api.login(phone, mpin);
+  const login = async (email: string, password: string) => {
+    const res = await api.login(email, password);
     persistSession(res.accessToken, res.refreshToken);
     setUser(res.user);
   };

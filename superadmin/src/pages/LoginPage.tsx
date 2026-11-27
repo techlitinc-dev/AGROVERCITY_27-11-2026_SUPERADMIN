@@ -9,7 +9,7 @@ function formatCountdown(totalSeconds: number): string {
   return `${String(m).padStart(2, '0')}:${String(s).padStart(2, '0')}`;
 }
 
-/** Pull a retry-after hint out of the upstream 429 envelope (best effort). */
+/** Pull a retry-after hint out of the 429 envelope (best effort). */
 function lockoutSecondsFrom(err: ApiClientError): number {
   const raw = (err.raw ?? {}) as { error?: { retryAfterSeconds?: number; retryAfterMinutes?: number; message?: string } };
   if (raw.error?.retryAfterSeconds) return raw.error.retryAfterSeconds;
@@ -19,16 +19,16 @@ function lockoutSecondsFrom(err: ApiClientError): number {
   if (minutes) return parseInt(minutes[1], 10) * 60;
   const seconds = /(\d+)\s*second/i.exec(message);
   if (seconds) return parseInt(seconds[1], 10);
-  return 900; // documented default: 15 minutes (doc/01)
+  return 900; // documented default: 15 minutes
 }
 
 export default function LoginPage() {
   const { login } = useAuth();
   const navigate = useNavigate();
 
-  const [phone, setPhone] = useState('');
-  const [mpin, setMpin] = useState('');
-  const [showMpin, setShowMpin] = useState(false);
+  const [email, setEmail] = useState('');
+  const [password, setPassword] = useState('');
+  const [showPassword, setShowPassword] = useState(false);
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [lockSecondsLeft, setLockSecondsLeft] = useState<number | null>(null);
@@ -50,25 +50,25 @@ export default function LoginPage() {
     if (locked || submitting) return;
     setError(null);
 
-    const digits = phone.replace(/\D/g, '');
-    if (digits.length < 10) {
-      setError('Enter a valid 10-digit mobile number.');
+    const trimmedEmail = email.trim();
+    if (!/^\S+@\S+\.\S+$/.test(trimmedEmail)) {
+      setError('Enter a valid email address.');
       return;
     }
-    if (!/^\d{4}$/.test(mpin)) {
-      setError('MPIN must be exactly 4 digits.');
+    if (!password) {
+      setError('Enter your password.');
       return;
     }
 
     setSubmitting(true);
     try {
-      await login(digits.length > 10 ? `+${digits}` : `+91${digits}`, mpin);
+      await login(trimmedEmail, password);
       navigate('/', { replace: true });
     } catch (err) {
       if (err instanceof ApiClientError && (err.status === 429 || /LOCK/i.test(err.code))) {
         setLockSecondsLeft(lockoutSecondsFrom(err));
       } else if (err instanceof ApiClientError) {
-        setError(err.message || 'Invalid credentials.');
+        setError(err.message || 'Invalid email or password.');
       } else {
         setError('Something went wrong. Please try again.');
       }
@@ -82,7 +82,7 @@ export default function LoginPage() {
       <div className="w-full max-w-md rounded-2xl bg-white p-8 shadow-2xl animate-slide-up">
         <div className="mb-8 text-center">
           <p className="text-2xl font-bold text-agri-800">Agrovercity Superadmin</p>
-          <p className="mt-1 text-sm text-slate-500">Operator sign-in — mobile + MPIN</p>
+          <p className="mt-1 text-sm text-slate-500">Operator sign-in — email + password</p>
         </div>
 
         {locked && (
@@ -99,45 +99,43 @@ export default function LoginPage() {
 
         <form onSubmit={(e) => void onSubmit(e)} className="space-y-4" noValidate>
           <div>
-            <label htmlFor="phone" className="mb-1 block text-sm font-medium text-slate-700">
-              Mobile number
+            <label htmlFor="email" className="mb-1 block text-sm font-medium text-slate-700">
+              Email
             </label>
             <input
-              id="phone"
-              type="tel"
-              inputMode="numeric"
+              id="email"
+              type="email"
               autoComplete="username"
-              placeholder="98765 43210"
-              value={phone}
+              placeholder="you@example.com"
+              value={email}
               disabled={locked || submitting}
-              onChange={(e) => setPhone(e.target.value.replace(/[^\d+ ]/g, ''))}
+              onChange={(e) => setEmail(e.target.value)}
               className="input-field"
             />
           </div>
 
           <div>
-            <label htmlFor="mpin" className="mb-1 block text-sm font-medium text-slate-700">
-              MPIN
+            <label htmlFor="password" className="mb-1 block text-sm font-medium text-slate-700">
+              Password
             </label>
             <div className="relative">
               <input
-                id="mpin"
-                type={showMpin ? 'text' : 'password'}
-                inputMode="numeric"
+                id="password"
+                type={showPassword ? 'text' : 'password'}
                 autoComplete="current-password"
-                placeholder="4-digit MPIN"
-                value={mpin}
+                placeholder="Your password"
+                value={password}
                 disabled={locked || submitting}
-                onChange={(e) => setMpin(e.target.value.replace(/\D/g, '').slice(0, 4))}
+                onChange={(e) => setPassword(e.target.value)}
                 className="input-field pr-16"
               />
               <button
                 type="button"
-                onClick={() => setShowMpin((v) => !v)}
+                onClick={() => setShowPassword((v) => !v)}
                 className="absolute inset-y-0 right-0 px-3 text-xs font-semibold text-agri-700 hover:text-agri-800"
                 disabled={locked || submitting}
               >
-                {showMpin ? 'Hide' : 'Show'}
+                {showPassword ? 'Hide' : 'Show'}
               </button>
             </div>
           </div>

@@ -46,17 +46,26 @@ from `superadmin/dist` on the same origin (no CORS issues).
 
 ## Operator login (dev)
 
-The superadmin console authenticates against the deployed API (`POST /v1/auth/login`)
-with an **admin-seeded** account (mobile + 4-digit MPIN). There is no self sign-up.
+The superadmin web app signs in with **email + password**, verified by the gateway
+(`POST /api/auth/login-email`) with a local failed-attempt throttle (5 failures →
+15-minute lockout). On success the gateway exchanges the seeded upstream service
+account (`UPSTREAM_SERVICE_PHONE` / `UPSTREAM_SERVICE_MPIN`, default
+`+919000000001` / `1234`) for an API session — the rest of the app (profile,
+sessions, change-MPIN) works on that upstream session.
 
-> **Seeding is a prerequisite.** If login returns `USER_NOT_FOUND`, an admin account
-> must be seeded on the API server by running
+| Env var | Default |
+|---|---|
+| `ADMIN_EMAIL` | `admin@gmail.com` |
+| `ADMIN_PASSWORD` | `admin` |
+
+> Owner decision: this replaces the mobile + MPIN login specified in `doc/01`.
+> Override the defaults via environment variables before exposing this anywhere real.
+
+> **Seeding is a prerequisite.** If login fails with an upstream error, the service
+> account must exist: run
 > [`backend/scripts/seed_superadmin_users.py`](https://github.com/techlitinc-dev/AGROVERCITY-05_10_2026/blob/main/backend/scripts/seed_superadmin_users.py)
-> from the `AGROVERCITY-05_10_2026` repo there. Known dev seed: `+919000000001` / `1234`
-> (`backend/app/data/superadmin_seed.py`).
-
-Lockout policy (5 failed attempts → 15-minute lock) is enforced by the upstream API
-(`security-policy`); the login page shows the countdown from the 429 response.
+> from the `AGROVERCITY-05_10_2026` repo on the API server
+> (`PYTHONPATH=. ./.venv/bin/python scripts/seed_superadmin_users.py`).
 
 ## What talks to what
 

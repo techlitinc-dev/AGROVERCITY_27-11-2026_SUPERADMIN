@@ -98,8 +98,8 @@ async function request<T>(method: string, path: string, opts: { json?: unknown; 
 }
 
 export const api = {
-  login: (phone: string, mpin: string) =>
-    request<LoginResponse>('POST', '/api/auth/login', { json: { phone, mpin } }),
+  login: (email: string, password: string) =>
+    request<LoginResponse>('POST', '/api/auth/login-email', { json: { email, password } }),
 
   me: () => request<AuthUser>('GET', '/api/auth/me'),
 

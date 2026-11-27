@@ -11,3 +11,14 @@ SPA_DIST = Path(os.getenv("SPA_DIST", REPO_ROOT / "superadmin" / "dist"))
 PASS_HEADERS = ("authorization", "x-api-key", "x-audit-reason")
 
 UPSTREAM_TIMEOUT_SECONDS = float(os.getenv("UPSTREAM_TIMEOUT_SECONDS", "30"))
+
+# --- Superadmin web-app login (email + password, verified locally by the gateway) ---
+ADMIN_EMAIL = os.getenv("ADMIN_EMAIL", "admin@gmail.com").strip().lower()
+ADMIN_PASSWORD = os.getenv("ADMIN_PASSWORD", "admin")
+LOGIN_MAX_ATTEMPTS = int(os.getenv("LOGIN_MAX_ATTEMPTS", "5"))
+LOGIN_LOCKOUT_SECONDS = int(os.getenv("LOGIN_LOCKOUT_SECONDS", "900"))
+
+# Seeded operator account the gateway exchanges for an upstream session after a
+# successful email/password login (see backend/scripts/seed_superadmin_users.py).
+UPSTREAM_SERVICE_PHONE = os.getenv("UPSTREAM_SERVICE_PHONE", "+919000000001")
+UPSTREAM_SERVICE_MPIN = os.getenv("UPSTREAM_SERVICE_MPIN", "1234")
