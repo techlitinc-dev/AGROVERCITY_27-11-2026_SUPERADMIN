@@ -123,9 +123,26 @@ export const api = {
     }),
 };
 
-/** Upstream session list shape varies; normalize to an array. */
+/** Upstream session list shape varies; normalize to the fields the table needs.
+ *  Real API returns {id, userId, device, createdAt, lastUsedAt}; older mocks used
+ *  {jti, userAgent, ip, lastActiveAt, current}. We accept both. */
 export function normalizeSessions(data: unknown): SessionInfo[] {
-  if (Array.isArray(data)) return data as SessionInfo[];
-  const wrapped = (data ?? {}) as { sessions?: SessionInfo[]; data?: SessionInfo[] };
-  return wrapped.sessions ?? wrapped.data ?? [];
+  const wrap = (data ?? {}) as { sessions?: unknown[]; data?: unknown[] };
+  const raw = Array.isArray(data) ? data : (wrap.sessions ?? wrap.data ?? []);
+  const browserUa = typeof navigator !== 'undefined' ? navigator.userAgent : '';
+  return raw
+    .filter((s): s is Record<string, unknown> => typeof s === 'object' && s !== null)
+    .map((s) => {
+      const device = (s.device ?? s.userAgent ?? '') as string;
+      return {
+        ...s,
+        jti: (s.jti ?? s.id ?? '') as string,
+        userAgent: device || undefined,
+        ip: (s.ip ?? undefined) as string | undefined,
+        createdAt: s.createdAt as string | undefined,
+        lastActiveAt: (s.lastActiveAt ?? s.lastUsedAt) as string | undefined,
+        current: s.current === undefined ? browserUa !== '' && device === browserUa : (s.current as boolean),
+      };
+    })
+    .filter((s) => s.jti !== '');
 }
