@@ -13,3 +13,6 @@ superadmin/dist/
 .env.*
 !.env.example
 .DS_Store
+
+# Runtime logs & PIDs
+logs/
